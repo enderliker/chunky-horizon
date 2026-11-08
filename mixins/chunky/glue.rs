@@ -25,6 +25,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 pub(super) enum Sender {
     Client,
     Player(u128),
+    Console,
 }
 
 impl Sender {
@@ -33,6 +34,9 @@ impl Sender {
             Sender::Client => game.native_chat(msg),
             Sender::Player(uuid) => {
                 game.native_tell(*uuid, Text::literal(msg));
+            }
+            Sender::Console => {
+                game.native_feedback(Text::literal(msg));
             }
         }
     }
@@ -166,6 +170,7 @@ pub(super) fn handle_command(game: &mut Game<'_>, sender: Sender, line: &str) {
                             .into_iter()
                             .find(|p| p.uuid == uuid)
                             .map(|p| (p.position[0], p.position[2])),
+                        Sender::Console => None,
                     };
                     match player_pos {
                         Some(pos) => pos,
@@ -477,7 +482,19 @@ pub(super) fn handle_command(game: &mut Game<'_>, sender: Sender, line: &str) {
             let tdir = tasks_dir(world_dir.as_deref(), &data_dir);
             let tfile = task::task_file(&tdir, &world);
             let existing = task::load(&tfile);
-            if existing.as_ref().is_some_and(|t| !t.state.is_cancelled()) {
+            let has_unfinished = existing.as_ref().is_some_and(|t| {
+                if t.state.is_cancelled() {
+                    return false;
+                }
+                if t.progress.count > 0
+                    && t.progress.total > 0
+                    && t.progress.count >= t.progress.total
+                {
+                    return false;
+                }
+                true
+            });
+            if has_unfinished {
                 with_state(|state| {
                     state.pending = Some((
                         PendingAction::Start {
@@ -618,6 +635,10 @@ pub(super) fn handle_command(game: &mut Game<'_>, sender: Sender, line: &str) {
                         task.stop(true);
                         task.finish(true, now);
                         let _ = task::save(&task, &tdir);
+                        let tfile = task::task_file(&tdir, &target);
+                        let _ = std::fs::remove_file(&tfile);
+                        let data_tfile = task::task_file(&data_dir.join(task::TASKS_DIR), &target);
+                        let _ = std::fs::remove_file(&data_tfile);
                         held
                     } else {
                         let tfile = task::task_file(&tdir, &target);
@@ -626,6 +647,9 @@ pub(super) fn handle_command(game: &mut Game<'_>, sender: Sender, line: &str) {
                             task.finish(true, now);
                             let _ = task::save(&task, &tdir);
                         }
+                        let _ = std::fs::remove_file(&tfile);
+                        let data_tfile = task::task_file(&data_dir.join(task::TASKS_DIR), &target);
+                        let _ = std::fs::remove_file(&data_tfile);
                         Vec::new()
                     }
                 });
@@ -903,6 +927,7 @@ pub(super) fn tick(game: &mut Game<'_>) {
         let silent = state.config.silent;
 
         let running_worlds = state.tasks.running();
+        let mut completed_worlds = Vec::new();
         for world in running_worlds {
             let Some(task) = state.tasks.get_mut(&world) else {
                 continue;
@@ -952,10 +977,18 @@ pub(super) fn tick(game: &mut Game<'_>) {
                         .line(),
                 );
                 let _ = task::save(task, &tdir);
+                let tfile = task::task_file(&tdir, &world);
+                let _ = std::fs::remove_file(&tfile);
+                let data_tfile = task::task_file(&data_dir.join(task::TASKS_DIR), &world);
+                let _ = std::fs::remove_file(&data_tfile);
+                completed_worlds.push(world.clone());
             } else if task.autosave_due(now) {
                 task.saved_automatically(now);
                 let _ = task::save(task, &tdir);
             }
+        }
+        for world in completed_worlds {
+            state.tasks.remove(&world);
         }
     });
 

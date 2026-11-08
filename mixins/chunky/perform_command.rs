@@ -8,7 +8,8 @@ fn chunky_perform_command(
     if !game.native_on(chunky_core::ID) {
         return;
     }
-    let Some(args) = command.strip_prefix("chunky") else {
+    let line = command.strip_prefix('/').unwrap_or(command);
+    let Some(args) = line.strip_prefix("chunky") else {
         return;
     };
     if !(args.is_empty() || args.starts_with(' ')) {

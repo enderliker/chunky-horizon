@@ -58,6 +58,17 @@ bindings = [
 ]
 
 [[injection]]
+id = "perform_console_command"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_perform_console_command"
+helper = "perform_console_command.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "command", ty = "&str", value = "command" },
+  { name = "ran", ty = "&mut bool", value = "&mut *ran" },
+]
+
+[[injection]]
 id = "tick"
 kind = "HEAD"
 target = "horizon_client::game::native_hooks::Game<'_>::native_server_tick"

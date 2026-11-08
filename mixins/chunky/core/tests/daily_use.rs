@@ -371,3 +371,71 @@ fn test_multiple_shapes_and_patterns_pause_resume() {
         }
     }
 }
+
+#[test]
+fn test_task_completion_frees_slot_and_allows_subsequent_start_with_new_radius() {
+    let tdir = temp_tasks_dir("completion_frees_slot");
+    let mut tasks = Tasks::new();
+
+    // 1. Initial task with radius 100
+    let mut selection1 = Selection::new("minecraft:overworld");
+    selection1.radius_x = 100.0;
+    selection1.radius_z = 100.0;
+    selection1.shape = ShapeKind::Square;
+
+    let mut task1 = Task::new(selection1);
+    task1.begin(1000);
+    task1.build_chunks(Sources::default(), |_, _| true).unwrap();
+    tasks.insert(task1);
+
+    assert!(tasks.is_running("minecraft:overworld"));
+
+    // Run task1 to completion
+    let mut cache = dummy_cache();
+    let mut task1 = tasks.remove("minecraft:overworld").unwrap();
+    while let Some(step) = task1.next_to_load(1000, &mut cache) {
+        if let Step::Load(c) = step {
+            task1.loaded(c, 1000);
+        }
+    }
+    assert!(task1.walk_exhausted());
+    assert_eq!(task1.working_count(), 0);
+
+    // Finish task1
+    task1.finish(false, 2000);
+    assert_eq!(task1.state, State::Completed);
+    assert!(task1.saved_cancelled());
+
+    // Save to disk
+    let file = task::save(&task1, &tdir).unwrap();
+
+    // Verify task loaded back from disk has is_cancelled() == true
+    let loaded = task::load(&file).unwrap();
+    assert!(loaded.state.is_cancelled());
+
+    // Clean up file on completion (as glue tick does)
+    let _ = std::fs::remove_file(&file);
+    assert!(!file.exists());
+
+    // Verify Tasks slot is free
+    assert!(!tasks.is_running("minecraft:overworld"));
+    assert!(tasks.get("minecraft:overworld").is_none());
+
+    // 2. Start new task with different radius (500) and shape (Circle)
+    let mut selection2 = Selection::new("minecraft:overworld");
+    selection2.radius_x = 500.0;
+    selection2.radius_z = 500.0;
+    selection2.shape = ShapeKind::Circle;
+
+    let mut task2 = Task::new(selection2);
+    task2.begin(3000);
+    task2.build_chunks(Sources::default(), |_, _| true).unwrap();
+    tasks.insert(task2);
+
+    assert!(tasks.is_running("minecraft:overworld"));
+    let current_task = tasks.get("minecraft:overworld").unwrap();
+    assert_eq!(current_task.selection.radius_x, 500.0);
+    assert_eq!(current_task.selection.shape, ShapeKind::Circle);
+
+    let _ = std::fs::remove_dir_all(&tdir);
+}
