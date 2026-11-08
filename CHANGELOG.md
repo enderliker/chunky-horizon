@@ -16,8 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dynamic tab-completion integration via `native_tab_complete_v2` for subcommands, shapes, patterns, worlds, and trim options.
 - Official paginated `/chunky help [page]` formatting with 8 commands per page across 3 pages.
 - Native task persistence, rate-limiting, and pause/continue/cancel state management.
-- Comprehensive unit test suite with 86 tests covering geometry, shapes, patterns, Anvil format, task engine, and command parsers.
+- Comprehensive integration and daily-use test suite (94 tests) covering geometry, shapes, patterns, Anvil format, task engine, lifecycle, world reload, and mid-generation updates.
 
 ### Fixed
 - Fixed `/chunky` with no arguments displaying `[Chunky] chunky help_1` instead of the official paginated help menu.
 - Fixed missing client-side Brigadier tab-completion and argument suggestions.
+- Fixed 3970-chunk stall in ring traversal iterator when crossing concentric ring boundaries.
+- Fixed `/chunky pause` continuing to generate and tick by immediately transitioning state to paused, removing from active task map, releasing tickets, and halting progress notifications.
+- Fixed deadlock when requested chunks were already loaded into memory.

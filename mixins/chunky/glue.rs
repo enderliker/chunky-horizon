@@ -46,6 +46,10 @@ enum PendingAction {
         inside: bool,
         filters: Vec<TrimFilter>,
     },
+    Start {
+        task: Task,
+        start_msg: String,
+    },
 }
 
 #[derive(Default)]
@@ -471,75 +475,98 @@ pub(super) fn handle_command(game: &mut Game<'_>, sender: Sender, line: &str) {
                 messages::start(&world, sel.shape, sel.center_x, sel.center_z, &rad_str).line();
 
             let tdir = tasks_dir(world_dir.as_deref(), &data_dir);
-            let _ = task::save(&task, &tdir);
+            let tfile = task::task_file(&tdir, &world);
+            let existing = task::load(&tfile);
+            if existing.as_ref().is_some_and(|t| !t.state.is_cancelled()) {
+                with_state(|state| {
+                    state.pending = Some((
+                        PendingAction::Start {
+                            task,
+                            start_msg: start_msg.clone(),
+                        },
+                        Instant::now(),
+                    ));
+                });
+                sender.send(game, &messages::start_confirm().line());
+                return;
+            }
 
+            let _ = task::save(&task, &tdir);
             with_state(|state| {
                 state.tasks.insert(task);
             });
             sender.send(game, &start_msg);
         }
         Action::Pause { world } => {
-            let default_dim = game.dim.id().to_string();
-            let target = world.unwrap_or_else(|| {
-                with_state(|state| {
-                    if state.active_world.is_empty() {
-                        default_dim.clone()
-                    } else {
-                        state.active_world.clone()
-                    }
-                })
-            });
+            let running_before = with_state(|state| state.tasks.running());
+            if running_before.is_empty() {
+                sender.send(game, &messages::pause_no_tasks().line());
+                return;
+            }
 
             let world_dir = game.native_world_dir();
             let data_dir = game.native_data_dir(chunky_core::ID);
             let tdir = tasks_dir(world_dir.as_deref(), &data_dir);
 
-            let paused = with_state(|state| {
-                if let Some(task) = state.tasks.get_mut(&target) {
-                    task.stop(false);
-                    let held = task.held();
-                    let _ = task::save(task, &tdir);
-                    Some(held)
-                } else {
-                    None
+            let targets = if let Some(target) = world {
+                if !running_before.contains(&target) {
+                    sender.send(game, &messages::help("pause").raw().to_string());
+                    return;
                 }
-            });
+                vec![target]
+            } else {
+                running_before
+            };
 
-            if let Some(held) = paused {
+            for target in targets {
+                let held = with_state(|state| {
+                    if let Some(mut task) = state.tasks.remove(&target) {
+                        let held = task.held();
+                        task.stop(false);
+                        let _ = task::save(&task, &tdir);
+                        held
+                    } else {
+                        Vec::new()
+                    }
+                });
                 let owner = format!("chunky:task/{target}");
                 for chunk in held {
                     game.native_force_chunk_in(&owner, &target, [chunk.x, chunk.z], false);
                 }
                 sender.send(game, &messages::pause(&target).line());
-            } else {
-                sender.send(game, &messages::pause_no_tasks().line());
             }
         }
         Action::Continue { world } => {
-            let default_dim = game.dim.id().to_string();
-            let target = world.unwrap_or_else(|| {
-                with_state(|state| {
-                    if state.active_world.is_empty() {
-                        default_dim.clone()
-                    } else {
-                        state.active_world.clone()
-                    }
-                })
-            });
-
             let world_dir = game.native_world_dir();
             let data_dir = game.native_data_dir(chunky_core::ID);
             let tdir = tasks_dir(world_dir.as_deref(), &data_dir);
 
-            let mut loaded_task = with_state(|state| state.tasks.remove(&target));
-            if loaded_task.is_none() {
+            let saved = if let Some(target) = world {
                 let tfile = task::task_file(&tdir, &target);
-                loaded_task = task::load(&tfile);
+                task::load(&tfile).map(|t| vec![t]).unwrap_or_default()
+            } else {
+                task::load_all(&tdir)
+            };
+
+            if saved.is_empty() || saved.iter().all(|t| t.state.is_cancelled()) {
+                sender.send(game, &messages::continue_no_tasks().line());
+                return;
             }
 
-            if let Some(mut task) = loaded_task {
-                let now = now_millis();
-                let config_dir = Game::native_config_dir().ok();
+            let now = now_millis();
+            let config_dir = Game::native_config_dir().ok();
+
+            for mut task in saved {
+                if task.state.is_cancelled() {
+                    continue;
+                }
+                let target = task.world().to_string();
+                let already_running = with_state(|state| state.tasks.is_running(&target));
+                if already_running {
+                    sender.send(game, &messages::started_already(&target).line());
+                    continue;
+                }
+
                 let reg_dir = world_dir.as_deref().map(|d| region_dir(d, &target));
                 let sources = Sources {
                     data_dir: Some(&data_dir),
@@ -548,44 +575,65 @@ pub(super) fn handle_command(game: &mut Game<'_>, sender: Sender, line: &str) {
                 };
                 if let Err(e) = task.build_chunks(sources, |_, _| true) {
                     sender.send(game, &format!("Failed to build task: {e:?}"));
-                    return;
+                    continue;
                 }
                 task.begin(now);
                 let _ = task::save(&task, &tdir);
                 with_state(|state| state.tasks.insert(task));
                 sender.send(game, &messages::continue_task(&target).line());
-            } else {
-                sender.send(game, &messages::continue_no_tasks().line());
             }
         }
         Action::Cancel { world } => {
-            let default_dim = game.dim.id().to_string();
-            let target = world.unwrap_or_else(|| {
-                with_state(|state| {
-                    if state.active_world.is_empty() {
-                        default_dim.clone()
-                    } else {
-                        state.active_world.clone()
-                    }
-                })
-            });
+            let world_dir = game.native_world_dir();
+            let data_dir = game.native_data_dir(chunky_core::ID);
+            let tdir = tasks_dir(world_dir.as_deref(), &data_dir);
+            let now = now_millis();
 
-            let cancelled = with_state(|state| state.tasks.remove(&target));
-            if let Some(mut task) = cancelled {
-                let now = now_millis();
-                task.stop(true);
+            let saved_tasks = task::load_all(&tdir);
+            let running = with_state(|state| state.tasks.running());
+
+            if running.is_empty()
+                && (saved_tasks.is_empty() || saved_tasks.iter().all(|t| t.state.is_cancelled()))
+            {
+                sender.send(game, &messages::cancel_no_tasks().line());
+                return;
+            }
+
+            let targets = if let Some(target) = world {
+                vec![target]
+            } else {
+                let mut all: Vec<String> = running;
+                for t in saved_tasks {
+                    if !t.state.is_cancelled() && !all.contains(&t.selection.world) {
+                        all.push(t.selection.world);
+                    }
+                }
+                all
+            };
+
+            for target in targets {
+                let held = with_state(|state| {
+                    if let Some(mut task) = state.tasks.remove(&target) {
+                        let held = task.held();
+                        task.stop(true);
+                        task.finish(true, now);
+                        let _ = task::save(&task, &tdir);
+                        held
+                    } else {
+                        let tfile = task::task_file(&tdir, &target);
+                        if let Some(mut task) = task::load(&tfile) {
+                            task.stop(true);
+                            task.finish(true, now);
+                            let _ = task::save(&task, &tdir);
+                        }
+                        Vec::new()
+                    }
+                });
                 let owner = format!("chunky:task/{target}");
-                for chunk in task.held() {
+                for chunk in held {
                     game.native_force_chunk_in(&owner, &target, [chunk.x, chunk.z], false);
                 }
-                task.finish(true, now);
-                let world_dir = game.native_world_dir();
-                let data_dir = game.native_data_dir(chunky_core::ID);
-                let tdir = tasks_dir(world_dir.as_deref(), &data_dir);
-                let _ = task::save(&task, &tdir);
                 sender.send(game, &messages::cancel(&target).line());
-            } else {
-                sender.send(game, &messages::cancel_no_tasks().line());
             }
         }
         Action::Progress => {
@@ -715,6 +763,14 @@ pub(super) fn handle_command(game: &mut Game<'_>, sender: Sender, line: &str) {
                                     sender.send(game, &format!("Trim failed: {e:?}"));
                                 }
                             }
+                        }
+                        PendingAction::Start { task, start_msg } => {
+                            let world_dir = game.native_world_dir();
+                            let data_dir = game.native_data_dir(chunky_core::ID);
+                            let tdir = tasks_dir(world_dir.as_deref(), &data_dir);
+                            let _ = task::save(&task, &tdir);
+                            with_state(|state| state.tasks.insert(task));
+                            sender.send(game, &start_msg);
                         }
                     }
                     return;
@@ -903,9 +959,19 @@ pub(super) fn tick(game: &mut Game<'_>) {
         }
     });
 
+    let current_dim = game.dim.id().to_string();
+    let mut already_loaded = Vec::new();
     for (world, chunk) in to_load {
-        let owner = format!("chunky:task/{world}");
-        game.native_force_chunk_in(&owner, &world, [chunk.x, chunk.z], true);
+        let is_in_mem = world == current_dim && game.world.chunks.contains_key(&(chunk.x, chunk.z));
+        if is_in_mem {
+            already_loaded.push((world, chunk));
+        } else {
+            let owner = format!("chunky:task/{world}");
+            game.native_force_chunk_in(&owner, &world, [chunk.x, chunk.z], true);
+        }
+    }
+    for (world, chunk) in already_loaded {
+        on_chunk_load(game, &world, [chunk.x, chunk.z], false);
     }
 
     for report in reports {

@@ -74,7 +74,11 @@ pub enum State {
 
 impl State {
     pub fn is_running(self) -> bool {
-        matches!(self, State::Running | State::Pausing | State::Cancelling)
+        self == State::Running
+    }
+
+    pub fn is_paused(self) -> bool {
+        self == State::Paused
     }
 
     /// Whether the task is over, which is what keeps `continue` from picking it
@@ -469,17 +473,12 @@ impl Task {
     /// Asks a running task to stop. `cancelled` decides whether it may be
     /// continued; Chunky's `stop`.
     pub fn stop(&mut self, cancelled: bool) {
-        self.state = match self.state {
-            State::Running => {
-                if cancelled {
-                    State::Cancelling
-                } else {
-                    State::Pausing
-                }
-            }
-            State::Pausing if cancelled => State::Cancelling,
-            other => other,
+        self.state = if cancelled {
+            State::Cancelled
+        } else {
+            State::Paused
         };
+        self.working.clear();
     }
 
     /// Sets the rate limit, as `/chunky limit` does.
@@ -999,7 +998,7 @@ mod tests {
         assert_eq!(task.state, State::Running);
 
         task.stop(false);
-        assert_eq!(task.state, State::Pausing);
+        assert_eq!(task.state, State::Paused);
         task.finish(false, 0);
         assert_eq!(task.state, State::Completed);
         assert!(task.saved_cancelled(), "a finished task is not continued");
@@ -1007,7 +1006,7 @@ mod tests {
         let mut task = Task::new(a_selection());
         task.begin(0);
         task.stop(true);
-        assert_eq!(task.state, State::Cancelling);
+        assert_eq!(task.state, State::Cancelled);
         task.finish(true, 0);
         assert_eq!(task.state, State::Cancelled);
         assert!(task.state.is_cancelled());
@@ -1019,7 +1018,7 @@ mod tests {
         task.begin(0);
         task.stop(false);
         task.stop(true);
-        assert_eq!(task.state, State::Cancelling);
+        assert_eq!(task.state, State::Cancelled);
     }
 
     #[test]
@@ -1467,13 +1466,8 @@ mod tests {
         assert!(tasks.is_running("minecraft:overworld"));
         assert_eq!(tasks.running(), vec!["minecraft:overworld".to_string()]);
 
-        // A pause leaves it running until it settles; a finish does not.
+        // A paused task is not running, so running() no longer includes it.
         tasks.get_mut("minecraft:overworld").unwrap().stop(false);
-        assert!(tasks.is_running("minecraft:overworld"));
-        tasks
-            .get_mut("minecraft:overworld")
-            .unwrap()
-            .finish(false, 0);
         assert!(!tasks.is_running("minecraft:overworld"));
         assert!(tasks.running().is_empty());
     }

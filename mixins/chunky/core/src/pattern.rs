@@ -206,7 +206,6 @@ enum State {
         outer: i32,
         current: u64,
         total_ring: u64,
-        started: bool,
         exhausted: bool,
     },
     Region {
@@ -432,12 +431,11 @@ impl Chunks {
                     center_x: math.center_chunk_x,
                     center_z: math.center_chunk_z,
                     radius,
-                    ring: -1,
+                    ring: 0,
                     inner: -1,
                     outer: 0,
                     current: 0,
                     total_ring: 0,
-                    started: false,
                     exhausted: false,
                 };
                 let total = (math.diameter_chunks_x as u64) * (math.diameter_chunks_x as u64);
@@ -694,23 +692,12 @@ impl Chunks {
                 outer,
                 current,
                 total_ring,
-                started,
                 exhausted,
             } => {
                 if *exhausted {
                     return None;
                 }
-                if !*started {
-                    if !ring_next_ring(*ring, *radius, inner, outer, total_ring) {
-                        *exhausted = true;
-                        return None;
-                    }
-                    *ring += 1;
-                    *current = 0;
-                    *started = true;
-                }
-                if *current >= *total_ring {
-                    *started = false;
+                while *current >= *total_ring {
                     if !ring_next_ring(*ring, *radius, inner, outer, total_ring) {
                         *exhausted = true;
                         return None;
@@ -1031,7 +1018,6 @@ fn ring_advance(state: &mut State, mut count: u64) {
         outer,
         current,
         total_ring,
-        started,
         exhausted,
         radius,
         ..
@@ -1040,27 +1026,19 @@ fn ring_advance(state: &mut State, mut count: u64) {
         return;
     };
     *ring = 0;
-    *started = false;
     *current = 0;
     *exhausted = false;
-    let center_radius = (WIDTH - 1) / 2;
     loop {
-        if !*started {
-            if !ring_next_ring(*ring, *radius, inner, outer, total_ring) {
-                *exhausted = true;
-                return;
-            }
-            *ring += 1;
-            *current = 0;
-            *started = true;
+        if !ring_next_ring(*ring, *radius, inner, outer, total_ring) {
+            *exhausted = true;
+            return;
         }
+        *ring += 1;
         if count < *total_ring {
             *current = count;
             return;
         }
-        let _ = center_radius;
         count -= *total_ring;
-        *started = false;
     }
 }
 
@@ -1343,5 +1321,18 @@ mod tests {
                 ChunkPos::new(-3, 4)
             ]
         );
+    }
+
+    #[test]
+    fn ring_walk_radius_500() {
+        let selection = selection(ShapeKind::Square, 500.0, PatternKind::Ring);
+        let mut chunks = Chunks::new(&selection, 0, Sources::default(), |_, _| true).unwrap();
+        let total = chunks.total();
+        assert_eq!(total, 4225);
+        let mut all = Vec::new();
+        while let Some(c) = chunks.next() {
+            all.push(c);
+        }
+        assert_eq!(all.len(), 4225);
     }
 }
