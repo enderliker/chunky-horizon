@@ -1,4 +1,5 @@
 /target/
+/dist/
 *.hnmod
 .DS_Store
 *.swp
