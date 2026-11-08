@@ -1,0 +1,7 @@
+# The workspace of the mod's own crate. The bundle adds `mixins/chunky/core` to
+# the game as a dependency ([[crate]] in horizon-mixin.toml); here it is a
+# plain workspace member so `cargo test` runs the port's logic on its own,
+# with no game and no compiler for Horizon needed.
+[workspace]
+members = ["mixins/chunky/core"]
+resolver = "3"

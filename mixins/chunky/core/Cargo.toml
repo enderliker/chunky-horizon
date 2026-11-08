@@ -1,0 +1,24 @@
+# The port's own code: the geometry, the shapes, the patterns, the generation
+# task, the config and the region files. Plain Rust, no game in it, so it is
+# tested with `cargo test` and reused by the bundle's helpers as
+# `chunky_core::...`.
+#
+# Every dependency below is already in Horizon's Cargo.lock at this version:
+# a bundle crate may use only those, since the game's build is `--locked`.
+[package]
+name = "chunky_core"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+description = "The logic of Chunky for Horizon: selections, shapes, patterns, the generation task and region files."
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+# Region files: gzip and zlib chunk payloads.
+flate2 = { version = "1.1.10", default-features = false, features = ["zlib-rs"] }
+# Region files: lz4-java block-framed chunk payloads.
+lz4_flex = { version = "0.14.0", default-features = false, features = ["std"] }
+# Region files: the xxHash32 the lz4 frame header carries.
+twox-hash = { version = "2.1.5", default-features = false }
