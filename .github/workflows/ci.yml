@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: format
+        run: |
+          cargo fmt --check
+          rustfmt --edition 2024 --check mixins/chunky/*.rs
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: test
+        run: cargo test
+
+  native:
+    name: compile into Horizon
+    runs-on: ubuntu-latest
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: horizon-rust/horizon-mods
+          path: horizon-mods
+      - uses: dtolnay/rust-toolchain@stable
+      - name: system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libasound2-dev libudev-dev \
+            libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            horizon-mods/native/source
+            horizon-mods/native/tools
+            horizon-mods/native/target
+          key: native-${{ hashFiles('compatibility.json') }}
+          restore-keys: native-
+      - name: cargo horizon-mods check
+        run: python3 horizon-mods/native/tools/native.py check "$PWD"
+      - name: package mod
+        run: python3 horizon-mods/native/tools/native.py package "$PWD"
+      - name: upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chunky-hnmod
+          path: horizon-mods/native/target/*.hnmod

@@ -1,0 +1,67 @@
+name: nightly
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  latest:
+    name: compile against the newest Nightly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: horizon-rust/horizon-mods
+          path: horizon-mods
+      - uses: dtolnay/rust-toolchain@stable
+      - name: system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libasound2-dev libudev-dev \
+            libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            horizon-mods/native/source
+            horizon-mods/native/tools
+            horizon-mods/native/target
+          key: native-latest-${{ github.run_id }}
+          restore-keys: native-latest- native-
+      - name: check against latest
+        id: check
+        run: python3 horizon-mods/native/tools/native.py check "$PWD" --horizon latest
+      - name: open an issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = 'Nightly build broke: re-pin Chunky';
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'nightly',
+            });
+            const body = [
+              `\`native.py check --horizon latest\` failed on ${new Date().toISOString()}.`,
+              '',
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              'Follow `docs/dev.md`: reproduce, then update `compatibility.json` and',
+              '`mixins/chunky/horizon-mixin.toml` to the new commit (or fix the hook).',
+            ].join('\n');
+            if (open.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: open[0].number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ['nightly'],
+              });
+            }

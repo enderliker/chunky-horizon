@@ -1,0 +1,33 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: build and publish release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: horizon-rust/horizon-mods
+          path: horizon-mods
+      - uses: dtolnay/rust-toolchain@stable
+      - name: system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libasound2-dev libudev-dev \
+            libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev
+      - name: package mod
+        run: python3 horizon-mods/native/tools/native.py package "$PWD"
+      - name: release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: horizon-mods/native/target/*.hnmod
+          generate_release_notes: true
