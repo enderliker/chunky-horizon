@@ -1,1 +1,5 @@
-target/
+/target/
+*.hnmod
+.DS_Store
+*.swp
+*~
