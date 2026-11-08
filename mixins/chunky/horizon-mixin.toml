@@ -119,3 +119,15 @@ bindings = [
   { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
   { name = "phase", ty = "crate::game::native_lifecycle::WorldPhase", value = "phase" },
 ]
+
+[[injection]]
+id = "tab_complete_v2"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_tab_complete_v2"
+helper = "tab_complete.rs"
+bindings = [
+  { name = "label", ty = "&str", value = "label" },
+  { name = "arguments", ty = "&[String]", value = "arguments" },
+  { name = "range", ty = "[usize; 2]", value = "range" },
+  { name = "suggestions", ty = "&mut Vec<horizon_client::command::Suggestion>", value = "&mut *suggestions" },
+]

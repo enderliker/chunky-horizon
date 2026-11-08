@@ -147,19 +147,30 @@ pub const HELP_ORDER: [&str; 20] = [
     "border",
     "reload",
 ];
+pub const HELP_COMMANDS: [&str; 20] = HELP_ORDER;
 
 /// The shape names in the order the error message lists them.
 pub fn shape_names() -> String {
-    let mut names: Vec<&str> = SHAPES.iter().map(|shape| shape.name()).collect();
+    sorted_shape_names().join(", ")
+}
+
+/// All shape names sorted alphabetically.
+pub fn sorted_shape_names() -> Vec<&'static str> {
+    let mut names: Vec<&'static str> = SHAPES.iter().map(|shape| shape.name()).collect();
     names.sort_unstable();
-    names.join(", ")
+    names
 }
 
 /// The pattern names in the order the error message lists them.
 pub fn pattern_names() -> String {
-    let mut names: Vec<&str> = PATTERNS.iter().map(|pattern| pattern.name()).collect();
+    sorted_pattern_names().join(", ")
+}
+
+/// All pattern names sorted alphabetically.
+pub fn sorted_pattern_names() -> Vec<&'static str> {
+    let mut names: Vec<&'static str> = PATTERNS.iter().map(|pattern| pattern.name()).collect();
     names.sort_unstable();
-    names.join(", ")
+    names
 }
 
 /// Reads a whole line, with or without the leading slash and label.

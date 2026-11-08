@@ -126,8 +126,8 @@ pub(super) fn handle_command(game: &mut Game<'_>, sender: Sender, line: &str) {
         Ok(action) => action,
         Err(err) => {
             let msg = match err {
-                ParseError::Usage(sub) => messages::help(sub).line(),
-                ParseError::Unknown => messages::help("help").line(),
+                ParseError::Usage(sub) => messages::help(sub).raw().to_string(),
+                ParseError::Unknown => messages::help("help").raw().to_string(),
                 ParseError::NotFound(command::NotFound::Shape(s)) => {
                     messages::shape_not_found(&s, &command::shape_names()).line()
                 }
@@ -137,7 +137,7 @@ pub(super) fn handle_command(game: &mut Game<'_>, sender: Sender, line: &str) {
                 ParseError::TrimFilter(t) => {
                     messages::trim_filter_invalid(&t, &trim::filter_keys()).line()
                 }
-                ParseError::TrimUsage => messages::help("trim").line(),
+                ParseError::TrimUsage => messages::help("trim").raw().to_string(),
             };
             sender.send(game, &msg);
             return;
@@ -146,10 +146,10 @@ pub(super) fn handle_command(game: &mut Game<'_>, sender: Sender, line: &str) {
 
     match action {
         Action::Help { page } => {
-            let page = page.unwrap_or(1).max(1);
-            let key = format!("help_{page}");
-            let msg = messages::help(&key);
-            sender.send(game, &msg.line());
+            let page = page.unwrap_or(1).max(1) as usize;
+            for msg in messages::help_page(page, true) {
+                sender.send(game, msg.raw());
+            }
         }
         Action::Center { x, z } => {
             let (target_x, target_z) = match (x, z) {
@@ -1044,4 +1044,129 @@ pub(super) fn settings_click(game: &mut Game<'_>, button: usize) {
         }
         save_config(game, &state.config);
     });
+}
+
+pub(super) fn handle_tab_complete(
+    arguments: &[String],
+    range: [usize; 2],
+    suggestions: &mut Vec<horizon_client::command::Suggestion>,
+) {
+    let mut add = |text: &str| {
+        suggestions.push(horizon_client::command::Suggestion {
+            range: (range[0], range[1]),
+            text: text.to_string(),
+            tooltip: None,
+            int_value: None,
+        });
+    };
+
+    let Some(typed) = arguments.last() else {
+        return;
+    };
+    let prefix = typed.to_lowercase();
+
+    match arguments.len() {
+        1 => {
+            for &cmd in &command::HELP_COMMANDS {
+                if cmd.starts_with(&prefix) {
+                    add(cmd);
+                }
+            }
+            if "confirm".starts_with(&prefix) {
+                add("confirm");
+            }
+            if "help".starts_with(&prefix) {
+                add("help");
+            }
+            if "debug".starts_with(&prefix) {
+                add("debug");
+            }
+        }
+        2 => {
+            let sub = arguments[0].to_lowercase();
+            match sub.as_str() {
+                "shape" => {
+                    for shape in command::sorted_shape_names() {
+                        if shape.starts_with(&prefix) {
+                            add(shape);
+                        }
+                    }
+                }
+                "pattern" => {
+                    for pat in command::sorted_pattern_names() {
+                        if pat.starts_with(&prefix) {
+                            add(pat);
+                        }
+                    }
+                }
+                "reload" => {
+                    if "config".starts_with(&prefix) {
+                        add("config");
+                    }
+                }
+                "debug" => {
+                    if "map".starts_with(&prefix) {
+                        add("map");
+                    }
+                }
+                "border" => {
+                    for b in ["add", "remove", "wrap", "list", "load", "bypass", "help"] {
+                        if b.starts_with(&prefix) {
+                            add(b);
+                        }
+                    }
+                }
+                "start" | "trim" | "world" | "worldborder" | "pause" | "continue" | "cancel" => {
+                    for w in [
+                        "minecraft:overworld",
+                        "minecraft:the_nether",
+                        "minecraft:the_end",
+                    ] {
+                        if w.starts_with(&prefix) {
+                            add(w);
+                        }
+                    }
+                    if sub == "start" || sub == "trim" {
+                        for shape in command::sorted_shape_names() {
+                            if shape.starts_with(&prefix) {
+                                add(shape);
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        3 => {
+            let sub = arguments[0].to_lowercase();
+            if sub == "start" || sub == "trim" {
+                for shape in command::sorted_shape_names() {
+                    if shape.starts_with(&prefix) {
+                        add(shape);
+                    }
+                }
+            }
+        }
+        8 => {
+            let sub = arguments[0].to_lowercase();
+            if sub == "trim" {
+                for mode in ["inside", "outside"] {
+                    if mode.starts_with(&prefix) {
+                        add(mode);
+                    }
+                }
+            }
+        }
+        n if n >= 9 => {
+            let sub = arguments[0].to_lowercase();
+            if sub == "trim" {
+                for filter in ["inhabited", "unmodified"] {
+                    if filter.starts_with(&prefix) {
+                        add(filter);
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
 }

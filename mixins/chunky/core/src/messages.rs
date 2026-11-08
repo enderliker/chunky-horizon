@@ -78,6 +78,11 @@ impl Message {
     pub fn line(&self) -> String {
         format!("{PREFIX}{}", self.0)
     }
+
+    /// The body of the message without the prefix.
+    pub fn raw(&self) -> &str {
+        &self.0
+    }
 }
 
 impl std::fmt::Display for Message {
@@ -586,6 +591,35 @@ pub fn help_more(command: &str) -> Message {
     Message(fill("Type &a%s&r to see more.", &[command])).stripped()
 }
 
+/// Formats a page of Chunky help commands, matching official Chunky's `HelpCommand`.
+pub fn help_page(page: usize, is_player: bool) -> Vec<Message> {
+    let mut out = Vec::new();
+    out.push(Message("&aChunky Commands&r".to_string()).stripped());
+    let total = crate::command::HELP_COMMANDS.len();
+    let per_page = 8;
+    let page_count = total.div_ceil(per_page);
+    let page_index = if page == 0 {
+        0
+    } else {
+        (page - 1) % page_count
+    };
+    let (first, last) = if is_player {
+        (
+            page_index * per_page,
+            (page_index * per_page + per_page).min(total),
+        )
+    } else {
+        (0, total)
+    };
+    for &cmd in &crate::command::HELP_COMMANDS[first..last] {
+        out.push(help(cmd));
+    }
+    if is_player && page_index + 1 < page_count {
+        out.push(help_more(&format!("/chunky help {}", page_index + 2)));
+    }
+    out
+}
+
 /// The `time_...` entries: "3 minutes", "1 minute".
 pub fn unit_label(amount: f64, unit: &str) -> String {
     let number = format_number(amount);
@@ -730,5 +764,39 @@ mod tests {
             "{line}"
         );
         assert!(!line.contains('&'), "{line}");
+    }
+
+    #[test]
+    fn a_help_page_matches_official_chunkys_pages() {
+        let p1 = help_page(1, true);
+        assert_eq!(p1.len(), 10);
+        assert_eq!(p1[0].raw(), "Chunky Commands");
+        assert_eq!(
+            p1[1].raw(),
+            "chunky start - Start a new chunk generation task"
+        );
+        assert_eq!(
+            p1[8].raw(),
+            "chunky spawn - Set the center to the spawn point"
+        );
+        assert_eq!(p1[9].raw(), "Type /chunky help 2 to see more.");
+
+        let p2 = help_page(2, true);
+        assert_eq!(p2.len(), 10);
+        assert_eq!(p2[0].raw(), "Chunky Commands");
+        assert_eq!(p2[1].raw(), "chunky radius <radius> - Set the radius");
+        assert_eq!(p2[9].raw(), "Type /chunky help 3 to see more.");
+
+        let p3 = help_page(3, true);
+        assert_eq!(p3.len(), 5);
+        assert_eq!(p3[0].raw(), "Chunky Commands");
+        assert_eq!(
+            p3[1].raw(),
+            "chunky selection - Display the current selection"
+        );
+        assert_eq!(p3[4].raw(), "chunky reload - Reload configuration");
+
+        let console = help_page(1, false);
+        assert_eq!(console.len(), 21);
     }
 }
