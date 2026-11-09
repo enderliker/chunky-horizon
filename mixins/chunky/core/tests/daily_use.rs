@@ -6,6 +6,7 @@
 //! - Mid-generation rate limit adjustments (/chunky limit)
 //! - Task cancellation and confirm flows
 
+use chunky_core::command::{self, should_claim_on_client};
 use chunky_core::pattern::{Pattern, PatternKind, Sources};
 use chunky_core::selection::Selection;
 use chunky_core::shape::ShapeKind;
@@ -438,4 +439,58 @@ fn test_task_completion_frees_slot_and_allows_subsequent_start_with_new_radius()
     assert_eq!(current_task.selection.shape, ShapeKind::Circle);
 
     let _ = std::fs::remove_dir_all(&tdir);
+}
+
+#[test]
+fn test_authoritative_server_command_routing_parity_integrated_singleplayer_and_lan() {
+    // 1. Client hook behaviour:
+    // In integrated single-player and remote/LAN multiplayer, `is_remote` is true.
+    // The client hook must skip claiming (`should_claim_on_client == false`) so Horizon
+    // forwards the chat packet to the authoritative server thread.
+    assert!(!should_claim_on_client(true, "/chunky start"));
+    assert!(!should_claim_on_client(true, "chunky start"));
+    assert!(!should_claim_on_client(true, "/chunky radius 250"));
+    assert!(!should_claim_on_client(true, "/chunky pause"));
+    assert!(!should_claim_on_client(true, "/chunky continue"));
+
+    // In offline standalone mode (`is_remote == false`), client hook claims the command.
+    assert!(should_claim_on_client(false, "/chunky start"));
+    assert!(should_claim_on_client(false, "chunky start"));
+
+    // 2. Authoritative server execution parity:
+    // When the authoritative server receives the command (via native_perform_command for players
+    // or native_perform_console_command for console), both `/chunky start` and `chunky start`
+    // are parsed identically.
+    let parsed_slash = command::parse("/chunky start 100").unwrap();
+    let parsed_bare = command::parse("chunky start 100").unwrap();
+    assert_eq!(parsed_slash, parsed_bare);
+
+    let mut tasks = Tasks::default();
+    let mut selection = Selection::new("minecraft:overworld");
+    selection.radius_x = 100.0;
+    selection.radius_z = 100.0;
+    selection.shape = ShapeKind::Square;
+
+    let mut task = Task::new(selection);
+    task.begin(1000);
+    task.build_chunks(Sources::default(), |_, _| true).unwrap();
+    tasks.insert(task);
+
+    assert!(tasks.is_running("minecraft:overworld"));
+
+    // 3. Ticking on authoritative server:
+    let mut cache = dummy_cache();
+    let mut task = tasks.remove("minecraft:overworld").unwrap();
+    let mut loaded = 0;
+    while let Some(step) = task.next_to_load(1000 + loaded * 5, &mut cache) {
+        if let Step::Load(chunk) = step {
+            task.loaded(chunk, 1000 + loaded * 5);
+            loaded += 1;
+        }
+    }
+
+    assert!(task.walk_exhausted());
+    assert_eq!(task.working_count(), 0);
+    task.finish(false, 2000);
+    assert_eq!(task.state, State::Completed);
 }

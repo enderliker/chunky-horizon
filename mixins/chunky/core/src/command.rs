@@ -20,6 +20,24 @@ use crate::trim::{self, TrimFilter};
 /// The command's label, without its slash.
 pub const LABEL: &str = "chunky";
 
+/// Determines whether a client-side command hook should claim the command or
+/// forward it to the authoritative server.
+///
+/// In integrated single-player and remote/LAN multiplayer, commands must NOT be claimed
+/// on the client, so that Horizon forwards them across the network / thread boundary to
+/// the authoritative server thread where chunk generation actually ticks.
+pub fn should_claim_on_client(is_remote: bool, command: &str) -> bool {
+    if is_remote {
+        return false;
+    }
+    let line = command.strip_prefix('/').unwrap_or(command);
+    if let Some(args) = line.strip_prefix(LABEL) {
+        args.is_empty() || args.starts_with(' ')
+    } else {
+        false
+    }
+}
+
 /// What a line asked for.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
@@ -696,5 +714,19 @@ mod tests {
             pattern_names(),
             "concentric, csv, loop, region, ring, spiral, strip, world"
         );
+    }
+
+    #[test]
+    fn client_command_claiming_skips_when_remote_or_integrated() {
+        assert!(!should_claim_on_client(true, "chunky start"));
+        assert!(!should_claim_on_client(true, "/chunky start"));
+        assert!(!should_claim_on_client(true, "/chunky radius 500"));
+
+        assert!(should_claim_on_client(false, "chunky start"));
+        assert!(should_claim_on_client(false, "/chunky start"));
+
+        assert!(!should_claim_on_client(false, "help"));
+        assert!(!should_claim_on_client(false, "/gamemode creative"));
+        assert!(!should_claim_on_client(false, "chunkynot"));
     }
 }

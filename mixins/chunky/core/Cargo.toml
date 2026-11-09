@@ -7,7 +7,7 @@
 # a bundle crate may use only those, since the game's build is `--locked`.
 [package]
 name = "chunky_core"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2024"
 license = "MIT"
 publish = false

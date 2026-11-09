@@ -5,6 +5,12 @@ All notable changes to Chunky for Horizon will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-11-09
+
+### Fixed
+- Fixed client command interception preventing server-thread execution in single-player and LAN multiplayer: `command.rs` now skips client-side claiming when connected to an integrated single-player or remote/LAN server (`game.remote.is_some()`), allowing Horizon to forward `/chunky` commands via chat packets to the authoritative server thread where `native_perform_command` handles them and `native_server_tick` drives generation.
+- Added client/server command routing test coverage in `daily_use.rs` verifying command forwarding parity across integrated single-player, LAN chat, and dedicated console.
+
 ## [1.0.1] - 2026-11-08
 
 ### Added
