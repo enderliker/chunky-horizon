@@ -3,7 +3,7 @@
 set -euo pipefail
 
 mod="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-tools="${HORIZON_MODS:-/home/ender/JEI-Horizon/horizon-mods}"
+tools="${HORIZON_MODS:-/home/ender/JEI-Horizon/horizon-ref/horizon-mods}"
 py="$tools/native/tools/native.py"
 
 sysroot="${HORIZON_SYSROOT:-/home/ender/horizon-tools/sysroot}"
