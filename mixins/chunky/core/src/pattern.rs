@@ -586,15 +586,13 @@ impl Chunks {
                     return None;
                 }
                 let strip_size = (WIDTH as u64) * (*size_z as u64);
-                let strip_x = *current / strip_size;
+                let strip_x = (*current / strip_size) * (WIDTH as u64);
                 let offset = *current % strip_size;
                 let current_width = WIDTH.min(*size_x - strip_x as i32);
-                let value = *current;
                 *current += 1;
                 if current_width <= 0 {
                     return None;
                 }
-                let _ = value;
                 Some(ChunkPos::new(
                     *min_x + strip_x as i32 + (offset % current_width as u64) as i32,
                     *min_z + (offset / current_width as u64) as i32,
@@ -1267,6 +1265,7 @@ mod tests {
             PatternKind::Spiral,
             PatternKind::Ring,
             PatternKind::Region,
+            PatternKind::Strip,
         ] {
             // Radius 320 blocks is 20 chunks, so 41x41 = 1681 chunks: enough
             // for the 400 the comparison walks.
@@ -1334,5 +1333,159 @@ mod tests {
             all.push(c);
         }
         assert_eq!(all.len(), 4225);
+    }
+
+    #[test]
+    fn strip_walks_multi_band_141x141_exact_coverage() {
+        use std::collections::HashSet;
+
+        // Radius 1120 blocks = 70 chunks. Diameter = 2 * 70 + 1 = 141 chunks.
+        // Bounding chunks: X in -70..=70, Z in -70..=70.
+        // Total chunks = 141 * 141 = 19,881.
+        let selection = selection(ShapeKind::Square, 1120.0, PatternKind::Strip);
+        let mut chunks = Chunks::new(&selection, 0, Sources::default(), |_, _| true).unwrap();
+        assert_eq!(chunks.total(), 19_881);
+
+        let mut visited = HashSet::with_capacity(19_881);
+        let mut count = 0;
+        while let Some(chunk) = chunks.next() {
+            count += 1;
+            assert!(
+                visited.insert(chunk),
+                "Duplicate chunk {chunk:?} yielded at count {count}"
+            );
+            assert!(
+                chunk.x >= -70 && chunk.x <= 70,
+                "Chunk X out of bounds: {}",
+                chunk.x
+            );
+            assert!(
+                chunk.z >= -70 && chunk.z <= 70,
+                "Chunk Z out of bounds: {}",
+                chunk.z
+            );
+        }
+        assert_eq!(count, 19_881);
+        assert_eq!(visited.len(), 19_881);
+        assert!(chunks.next().is_none());
+
+        for x in -70..=70 {
+            for z in -70..=70 {
+                assert!(
+                    visited.contains(&ChunkPos::new(x, z)),
+                    "Missing chunk ({x}, {z})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn strip_walks_multi_band_rectangle_auto_select() {
+        use std::collections::HashSet;
+
+        // Rectangle with radius_x = 70 chunks (141 diameter), radius_z = 80 chunks (161 diameter).
+        // Concentric pattern automatically falls back to Strip for non-square/circle shapes.
+        let mut selection = selection(ShapeKind::Rectangle, 16.0 * 70.0, PatternKind::Concentric);
+        selection.radius_z = 16.0 * 80.0;
+        let mut chunks = Chunks::new(&selection, 0, Sources::default(), |_, _| true).unwrap();
+        let expected_total = 141 * 161;
+        assert_eq!(chunks.total(), expected_total as u64);
+
+        let mut visited = HashSet::with_capacity(expected_total);
+        let mut count = 0;
+        while let Some(chunk) = chunks.next() {
+            count += 1;
+            assert!(
+                visited.insert(chunk),
+                "Duplicate chunk {chunk:?} yielded in rectangle at count {count}"
+            );
+            assert!(
+                chunk.x >= -70 && chunk.x <= 70,
+                "Rectangle chunk X out of bounds: {}",
+                chunk.x
+            );
+            assert!(
+                chunk.z >= -80 && chunk.z <= 80,
+                "Rectangle chunk Z out of bounds: {}",
+                chunk.z
+            );
+        }
+        assert_eq!(count, expected_total);
+        assert_eq!(visited.len(), expected_total);
+        assert!(chunks.next().is_none());
+
+        for x in -70..=70 {
+            for z in -80..=80 {
+                assert!(
+                    visited.contains(&ChunkPos::new(x, z)),
+                    "Missing rectangle chunk ({x}, {z})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn strip_walks_multi_band_ellipse_auto_select() {
+        use std::collections::HashSet;
+
+        // Ellipse with radius_x = 70 chunks (141 diameter), radius_z = 80 chunks (161 diameter).
+        // Ring pattern automatically falls back to Strip for Ellipse.
+        let mut selection = selection(ShapeKind::Ellipse, 16.0 * 70.0, PatternKind::Ring);
+        selection.radius_z = 16.0 * 80.0;
+        let mut chunks = Chunks::new(&selection, 0, Sources::default(), |_, _| true).unwrap();
+        let bounding_total = 141 * 161;
+        assert_eq!(chunks.total(), bounding_total as u64);
+
+        let mut visited = HashSet::with_capacity(bounding_total);
+        let mut kept_chunks = Vec::new();
+        while let Some(chunk) = chunks.next() {
+            assert!(
+                visited.insert(chunk),
+                "Duplicate chunk {chunk:?} yielded in ellipse"
+            );
+            assert!(
+                chunk.x >= -70 && chunk.x <= 70,
+                "Ellipse chunk X out of bounds: {}",
+                chunk.x
+            );
+            assert!(
+                chunk.z >= -80 && chunk.z <= 80,
+                "Ellipse chunk Z out of bounds: {}",
+                chunk.z
+            );
+            if selection.keeps(chunk) {
+                kept_chunks.push(chunk);
+            }
+        }
+        assert_eq!(visited.len(), bounding_total);
+        assert!(!kept_chunks.is_empty());
+        assert!(chunks.next().is_none());
+    }
+
+    #[test]
+    fn strip_walk_resumes_across_multiple_bands() {
+        let selection = selection(ShapeKind::Square, 1120.0, PatternKind::Strip);
+        let all = collect(
+            Chunks::new(&selection, 0, Sources::default(), |_, _| true).unwrap(),
+            12_000,
+        );
+
+        // Resume in band 1 (after 64 * 141 = 9024 chunks)
+        let resume_point = 9024 + 50;
+        let resumed = collect(
+            Chunks::new(
+                &selection,
+                resume_point as u64,
+                Sources::default(),
+                |_, _| true,
+            )
+            .unwrap(),
+            2000,
+        );
+        assert_eq!(
+            &all[resume_point..resume_point + 2000],
+            &resumed[..],
+            "Strip did not resume accurately across strip bands"
+        );
     }
 }

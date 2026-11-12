@@ -7,9 +7,9 @@
 # a bundle crate may use only those, since the game's build is `--locked`.
 [package]
 name = "chunky_core"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2024"
-license = "MIT"
+license = "GPL-3.0-or-later"
 publish = false
 description = "The logic of Chunky for Horizon: selections, shapes, patterns, the generation task and region files."
 

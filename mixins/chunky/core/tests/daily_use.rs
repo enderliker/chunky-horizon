@@ -494,3 +494,80 @@ fn test_authoritative_server_command_routing_parity_integrated_singleplayer_and_
     task.finish(false, 2000);
     assert_eq!(task.state, State::Completed);
 }
+
+#[test]
+fn test_world_shutdown_releases_in_flight_held_tickets() {
+    let tdir = temp_tasks_dir("world_shutdown_in_flight");
+    let mut tasks = Tasks::new();
+
+    let mut selection = Selection::new("minecraft:overworld");
+    selection.radius_x = 300.0;
+    selection.radius_z = 300.0;
+    selection.shape = ShapeKind::Square;
+
+    let mut task = Task::new(selection);
+    task.begin(1000);
+    task.build_chunks(Sources::default(), |_, _| true).unwrap();
+
+    let mut cache = dummy_cache();
+    // Simulate generation in flight: chunks are requested via next_to_load (entering task.working),
+    // but the server has NOT called task.loaded yet (chunks are still generating in the background).
+    let mut in_flight_chunks = Vec::new();
+    for _ in 0..10 {
+        if let Some(Step::Load(chunk)) = task.next_to_load(1000, &mut cache) {
+            in_flight_chunks.push(chunk);
+        }
+    }
+
+    assert_eq!(in_flight_chunks.len(), 10);
+    assert_eq!(task.working_count(), 10);
+    assert_eq!(task.held().len(), 10);
+
+    tasks.insert(task);
+
+    // Track tickets that the glue releases to the game engine
+    let mut released_tickets = Vec::new();
+
+    // Exact on_world_close lifecycle simulation matching glue.rs:
+    let running_worlds = tasks.running();
+    for world in running_worlds {
+        if let Some(task) = tasks.get_mut(&world) {
+            // Fix: held tickets must be captured before task.stop(false) clears working
+            let held = task.held();
+            task.stop(false);
+            for chunk in held {
+                released_tickets.push((world.clone(), chunk));
+            }
+            task::save(task, &tdir).unwrap();
+        }
+    }
+
+    // Verify all 10 in-flight chunks were captured and released
+    assert_eq!(released_tickets.len(), 10);
+    for chunk in &in_flight_chunks {
+        assert!(
+            released_tickets
+                .iter()
+                .any(|(w, c)| w == "minecraft:overworld" && c == chunk),
+            "Chunk {chunk:?} was in flight but ticket was not released during world shutdown"
+        );
+    }
+
+    // Verify task state: no held tickets remain in memory
+    let task = tasks.get("minecraft:overworld").unwrap();
+    assert_eq!(task.state, State::Paused);
+    assert_eq!(task.working_count(), 0);
+    assert!(
+        task.held().is_empty(),
+        "Held tickets must be empty after stop"
+    );
+
+    // Verify that resuming after restart works cleanly without orphaned tickets
+    let saved_tasks = task::load_all(&tdir);
+    assert_eq!(saved_tasks.len(), 1);
+    let resumed = saved_tasks.into_iter().next().unwrap();
+    assert_eq!(resumed.state, State::Paused);
+    assert_eq!(resumed.working_count(), 0);
+
+    let _ = std::fs::remove_dir_all(&tdir);
+}

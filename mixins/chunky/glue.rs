@@ -1079,9 +1079,10 @@ pub(super) fn on_world_close(game: &mut Game<'_>) {
         let running_worlds = state.tasks.running();
         for world in running_worlds {
             if let Some(task) = state.tasks.get_mut(&world) {
+                let held = task.held();
                 task.stop(false);
                 let owner = format!("chunky:task/{world}");
-                for chunk in task.held() {
+                for chunk in held {
                     game.native_force_chunk_in(&owner, &world, [chunk.x, chunk.z], false);
                 }
                 let _ = task::save(task, &tdir);

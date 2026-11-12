@@ -5,6 +5,13 @@ All notable changes to Chunky for Horizon will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-11-12
+
+### Fixed
+- Fixed multi-strip chunk selection in `pattern.rs`: corrected strip X-offset calculation (`strip_x = current / (WIDTH * size_z) * WIDTH`), resolving overlapping strips and ensuring 100% unique chunk coverage without gaps or duplicates for selections exceeding 64 chunks in width (e.g. 141×141 selections, non-square rectangles, and ellipses).
+- Fixed ticket cleanup during world shutdown in `glue.rs`: captured in-flight held chunks before calling `task.stop(false)`, ensuring all force-load tickets are properly released to the game engine when the world closes.
+- Reconciled licensing and attribution: updated `core/Cargo.toml` to `GPL-3.0-or-later`, updated `NOTICE` to accurately attribute original Chunky (pop4959 and contributors) under GPL-3.0-or-later at pinned commit `c4274bd539d1d79a15fe1e73afb2eface64d625f`, packaged `NOTICE` into the distributed `.hnmod` bundle (`mixins/chunky/data/NOTICE`), and added an Attribution & License section to `README.md`.
+
 ## [1.0.2] - 2026-11-09
 
 ### Fixed

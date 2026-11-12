@@ -1,0 +1,28 @@
+Chunky for Horizon
+==================
+
+This mod is an unofficial native port of Chunky, a Minecraft world pre-generation tool,
+to Horizon. Upstream Chunky is:
+
+  Copyright (C) 2019-2026 pop4959 and contributors
+  Licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later).
+  https://github.com/pop4959/Chunky
+  Pinned upstream revision: c4274bd539d1d79a15fe1e73afb2eface64d625f
+
+The command structure, selection algorithms, shapes, walk patterns,
+region status parsing, trim rules, progress math, and message formats
+are derived and adapted from Chunky's source and specification, which are
+licensed under GPL-3.0-or-later. The original copyright notice above
+applies to those parts.
+
+Chunky for Horizon is licensed under the GNU General Public License v3.0
+(GPL-3.0-or-later), matching the upstream Chunky license. See the LICENSE
+file for the full GNU General Public License terms.
+
+This is an unofficial native port for Horizon. It is not made, endorsed,
+or supported by pop4959, the Chunky contributors, Mojang, Microsoft, or
+the Horizon project.
+
+Horizon is a Rust reimplementation of Minecraft: Java Edition. Minecraft is a
+trademark of Mojang Synergies AB. This mod contains no Minecraft code or assets;
+it interacts through Horizon's native hooks and the server chunk loading pipeline.

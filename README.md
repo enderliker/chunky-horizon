@@ -57,3 +57,10 @@ python3 /path/to/horizon-mods/native/tools/native.py check .
 # Package .hnmod for the registry
 python3 /path/to/horizon-mods/native/tools/native.py package .
 ```
+
+## Attribution & License
+
+- **Upstream Chunky**: Copyright (C) 2019-2026 pop4959 and contributors, licensed under the GNU General Public License v3.0 or later ([GPL-3.0-or-later](https://github.com/pop4959/Chunky/blob/master/LICENSE)).
+- **Chunky for Horizon**: Native port for Horizon licensed under GNU General Public License v3.0 or later (GPL-3.0-or-later).
+- See [NOTICE](NOTICE) and [LICENSE](LICENSE) for complete copyright notices and terms.
+
